@@ -3,13 +3,26 @@ import Typo from '@/components/typo';
 import { CATEGORIAS_FIJAS } from '@/constants/categorias';
 import { colors, radius, spacingX, spacingY } from '@/constants/theme';
 import { useAuth, useLogout } from '@/context/AuthContext';
+import {
+  calcularComparacion,
+  calcularDatosLinea,
+  calcularDatosPie,
+  calcularTopCategorias,
+} from '@/utils/estadisticas';
 import { Gasto, MesCerrado, gastosService } from '@/utils/gastosService';
 import { verticalScale } from '@/utils/styling';
 import { useRouter } from 'expo-router';
-import { PencilSimpleIcon, PlusIcon } from 'phosphor-react-native';
-import React, { useCallback, useEffect, useState } from 'react';
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  TrophyIcon,
+} from 'phosphor-react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Dimensions,
   FlatList,
   Modal,
   RefreshControl,
@@ -19,17 +32,33 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { LineChart, PieChart } from 'react-native-chart-kit';
 
 const MESES = [
   'Enero','Febrero','Marzo','Abril','Mayo','Junio',
   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre',
 ];
 
+const SCREEN_W = Dimensions.get('window').width;
+const CHART_W = SCREEN_W - 40;
+
+const chartConfig = {
+  backgroundGradientFrom: colors.neutral800,
+  backgroundGradientTo: colors.neutral800,
+  decimalPlaces: 0,
+  color: (opacity = 1) => `rgba(163, 230, 53, ${opacity})`,
+  labelColor: (opacity = 1) => `rgba(212, 212, 212, ${opacity})`,
+  strokeWidth: 2,
+  propsForDots: { r: '4', strokeWidth: '2', stroke: colors.primary },
+  propsForBackgroundLines: { stroke: colors.neutral700, strokeDasharray: '' },
+};
+
 const Dashboard = () => {
   const { user } = useAuth();
   const logout = useLogout();
   const router = useRouter();
   const [gastos, setGastos] = useState<Gasto[]>([]);
+  const [totalAnterior, setTotalAnterior] = useState<number>(0);
   const [refreshing, setRefreshing] = useState(false);
   const [cerrando, setCerrando] = useState(false);
 
@@ -54,15 +83,44 @@ const Dashboard = () => {
     ? '#f97316'
     : colors.primary;
 
+  // ─── Estadisticas ───
+  const top3 = useMemo(() => calcularTopCategorias(gastos, 3), [gastos]);
+  const datosPie = useMemo(() => calcularDatosPie(gastos), [gastos]);
+  const datosLinea = useMemo(
+    () => calcularDatosLinea(gastos, mesActual, añoActual),
+    [gastos, mesActual, añoActual]
+  );
+  const comparacion = useMemo(
+    () => calcularComparacion(total, totalAnterior),
+    [total, totalAnterior]
+  );
+
   const cargar = useCallback(async () => {
     if (!user?.uid) return;
-    const [data, pres] = await Promise.all([
+    const mesPrevio = mesActual === 0 ? 11 : mesActual - 1;
+    const añoPrevio = mesActual === 0 ? añoActual - 1 : añoActual;
+
+    const [data, pres, mesesCerrados, todosGastos] = await Promise.all([
       gastosService.getMesActual(user.uid),
       gastosService.getPresupuesto(user.uid, mesActual, añoActual),
+      gastosService.getMesesCerrados(user.uid),
+      gastosService.getAll(user.uid),
     ]);
+
+    // Total mes anterior: buscar primero en cerrados, sino en activos
+    const cerradoAnterior = mesesCerrados.find(
+      (m) => m.mes === mesPrevio && m.año === añoPrevio
+    );
+    const totalAnt = cerradoAnterior
+      ? cerradoAnterior.total
+      : todosGastos
+          .filter((g) => g.mes === mesPrevio && g.año === añoPrevio)
+          .reduce((acc, g) => acc + g.monto, 0);
+
     setGastos(data);
     setPresupuesto(pres);
-  }, [user]);
+    setTotalAnterior(totalAnt);
+  }, [user, mesActual, añoActual]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
@@ -99,9 +157,13 @@ const Dashboard = () => {
   };
 
   const handleCerrarMes = () => {
+    if (gastos.length === 0) {
+      Alert.alert('Sin gastos', 'No hay gastos en este mes para cerrar.');
+      return;
+    }
     Alert.alert(
       'Cerrar mes',
-      `¿Confirmas cerrar ${MESES[mesActual]} ${añoActual}? Se guardara en el historial.`,
+      `¿Confirmas cerrar ${MESES[mesActual]} ${añoActual}? Los ${gastos.length} gastos del mes se guardaran en el historial.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -109,9 +171,21 @@ const Dashboard = () => {
           style: 'destructive',
           onPress: async () => {
             setCerrando(true);
-            await gastosService.cerrarMes(user!.uid!, mesActual, añoActual);
+            const result = await gastosService.cerrarMes(user!.uid!, mesActual, añoActual);
             await cargar();
             setCerrando(false);
+            if (result.success) {
+              Alert.alert(
+                'Mes cerrado',
+                `${MESES[mesActual]} ${añoActual} se guardo en el historial.`,
+                [
+                  { text: 'Ver historial', onPress: () => router.push('/(tabs)/historial') },
+                  { text: 'OK', style: 'cancel' },
+                ]
+              );
+            } else {
+              Alert.alert('Error', result.msg ?? 'No se pudo cerrar el mes.');
+            }
           },
         },
       ]
@@ -147,6 +221,8 @@ const Dashboard = () => {
     );
   };
 
+  const mesAnteriorNombre = MESES[mesActual === 0 ? 11 : mesActual - 1];
+
   return (
     <View style={styles.root}>
       {/* Header */}
@@ -162,6 +238,7 @@ const Dashboard = () => {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: verticalScale(160) }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
         {/* Tarjeta del mes */}
@@ -174,6 +251,33 @@ const Dashboard = () => {
             ${total.toLocaleString()}
           </Typo>
           <Typo size={13} color={colors.neutral500}>total gastado este mes</Typo>
+
+          {/* Comparacion mes vs mes */}
+          {totalAnterior > 0 && comparacion.tendencia !== 'same' && (
+            <View
+              style={[
+                styles.comparacionBadge,
+                {
+                  backgroundColor:
+                    comparacion.tendencia === 'up' ? '#ef444420' : '#22c55e20',
+                },
+              ]}
+            >
+              {comparacion.tendencia === 'up' ? (
+                <ArrowUpIcon size={14} color={colors.rose} weight="bold" />
+              ) : (
+                <ArrowDownIcon size={14} color="#22c55e" weight="bold" />
+              )}
+              <Typo
+                size={12}
+                fontWeight="600"
+                color={comparacion.tendencia === 'up' ? colors.rose : '#22c55e'}
+              >
+                {Math.abs(comparacion.porcentaje).toFixed(0)}%{' '}
+                {comparacion.tendencia === 'up' ? 'mas' : 'menos'} que {mesAnteriorNombre}
+              </Typo>
+            </View>
+          )}
 
           {/* Presupuesto */}
           <View style={styles.presupuestoRow}>
@@ -220,6 +324,86 @@ const Dashboard = () => {
             </View>
           )}
         </View>
+
+        {/* Top 3 categorias */}
+        {top3.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <TrophyIcon size={18} color={colors.primary} weight="fill" />
+                <Typo size={17} fontWeight="700">Top categorias</Typo>
+              </View>
+            </View>
+            <View style={{ gap: 10 }}>
+              {top3.map((cat, i) => (
+                <View key={cat.value} style={styles.topItem}>
+                  <View style={[styles.topRank, { backgroundColor: cat.bgColor }]}>
+                    <Typo size={13} fontWeight="800" color={colors.neutral900}>
+                      {i + 1}
+                    </Typo>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.topItemRow}>
+                      <Typo size={15} fontWeight="600">{cat.label}</Typo>
+                      <Typo size={15} fontWeight="700">${cat.total.toLocaleString()}</Typo>
+                    </View>
+                    <View style={styles.topBarFondo}>
+                      <View
+                        style={[
+                          styles.topBarRelleno,
+                          { width: `${cat.porcentaje}%` as any, backgroundColor: cat.bgColor },
+                        ]}
+                      />
+                    </View>
+                    <Typo size={11} color={colors.neutral500}>
+                      {cat.porcentaje.toFixed(1)}% del total
+                    </Typo>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Grafico de torta */}
+        {datosPie.length > 0 && (
+          <View style={styles.section}>
+            <Typo size={17} fontWeight="700">Distribucion por categoria</Typo>
+            <View style={styles.chartCard}>
+              <PieChart
+                data={datosPie}
+                width={CHART_W - 30}
+                height={200}
+                chartConfig={chartConfig}
+                accessor="population"
+                backgroundColor="transparent"
+                paddingLeft="10"
+                absolute
+              />
+            </View>
+          </View>
+        )}
+
+        {/* Grafico de linea */}
+        {gastos.length >= 2 && (
+          <View style={styles.section}>
+            <Typo size={17} fontWeight="700">Acumulado del mes</Typo>
+            <View style={styles.chartCard}>
+              <LineChart
+                data={datosLinea}
+                width={CHART_W - 30}
+                height={200}
+                chartConfig={chartConfig}
+                bezier
+                withInnerLines={false}
+                withOuterLines={false}
+                fromZero
+                yAxisLabel="$"
+                style={{ borderRadius: radius._15, marginLeft: -10 }}
+              />
+            </View>
+          </View>
+        )}
 
         {/* Gastos del mes */}
         <View style={styles.section}>
@@ -323,6 +507,16 @@ const styles = StyleSheet.create({
     gap: 6,
     marginBottom: spacingY._20,
   },
+  comparacionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius._10,
+    marginTop: 6,
+  },
   presupuestoRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -364,6 +558,51 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  topItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.neutral800,
+    borderRadius: radius._15,
+    borderCurve: 'continuous',
+    padding: spacingX._15,
+  },
+  topRank: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  topItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  topBarFondo: {
+    height: 6,
+    backgroundColor: colors.neutral700,
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginVertical: 4,
+  },
+  topBarRelleno: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  chartCard: {
+    backgroundColor: colors.neutral800,
+    borderRadius: radius._15,
+    borderCurve: 'continuous',
+    padding: spacingX._10,
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
   gastoItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -398,6 +637,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 8,
+    zIndex: 10,
   },
   modalOverlay: {
     flex: 1,

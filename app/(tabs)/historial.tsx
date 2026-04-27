@@ -4,7 +4,8 @@ import { colors, radius, spacingX, spacingY } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { Gasto, MesCerrado, gastosService } from '@/utils/gastosService';
 import { verticalScale } from '@/utils/styling';
-import React, { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 const MESES = [
@@ -24,7 +25,8 @@ const Historial = () => {
     setMeses(data);
   }, [user]);
 
-  useEffect(() => { cargar(); }, [cargar]);
+  // Recargar cada vez que el tab obtiene el foco
+  useFocusEffect(useCallback(() => { cargar(); }, [cargar]));
 
   const onRefresh = async () => {
     setRefreshing(true);

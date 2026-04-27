@@ -93,25 +93,43 @@ export const gastosService = {
 
   // ─── Cierre de mes ────────────────────────────────────────────────────────
 
-  cerrarMes: async (userId: string, mes: number, año: number): Promise<void> => {
+  cerrarMes: async (
+    userId: string,
+    mes: number,
+    año: number
+  ): Promise<{ success: boolean; msg?: string }> => {
     const todos = await gastosService.getAll(userId);
     const delMes = todos.filter((g) => g.mes === mes && g.año === año);
+
+    if (delMes.length === 0) {
+      return { success: false, msg: 'No hay gastos en este mes para cerrar.' };
+    }
+
     const total = delMes.reduce((acc, g) => acc + g.monto, 0);
+    const nuevoMes: MesCerrado = {
+      mes,
+      año,
+      total,
+      gastos: delMes,
+      cerradoEn: new Date().toISOString(),
+    };
 
     const meses = (await storage.get<MesCerrado[]>(mesesKey(userId))) ?? [];
     const yaCerrado = meses.find((m) => m.mes === mes && m.año === año);
-    if (!yaCerrado) {
-      await storage.set(mesesKey(userId), [
-        ...meses,
-        { mes, año, total, gastos: delMes, cerradoEn: new Date().toISOString() },
-      ]);
-    }
+
+    const mesesActualizados = yaCerrado
+      ? meses.map((m) => (m.mes === mes && m.año === año ? nuevoMes : m))
+      : [...meses, nuevoMes];
+
+    await storage.set(mesesKey(userId), mesesActualizados);
 
     // Eliminar del registro activo los gastos cerrados
     await storage.set(
       gastosKey(userId),
       todos.filter((g) => !(g.mes === mes && g.año === año))
     );
+
+    return { success: true };
   },
 
   getMesesCerrados: async (userId: string): Promise<MesCerrado[]> => {
