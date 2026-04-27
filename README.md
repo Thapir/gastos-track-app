@@ -1,50 +1,105 @@
-# Welcome to your Expo app 👋
+# Gastos Track App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+App movil para llevar el control de tus gastos personales. Define un presupuesto mensual, registra tus gastos por categoria, y revisa tu historial mes a mes.
 
-## Get started
+Construida con **Expo** + **React Native** + **TypeScript**.
 
-1. Install dependencies
+## Caracteristicas
 
-   ```bash
-   npm install
-   ```
+- **Autenticacion local** con email/contrasena (preparada para migrar a Firebase)
+- **Modo invitado** para usar la app sin crear cuenta
+- **Dashboard mensual** con total gastado y barra de progreso del presupuesto
+- **Presupuesto editable** por mes — el restante se actualiza con cada gasto
+- **Categorias fijas** (Comida, Transporte, Salud, Hogar, Ocio, Ropa, Educacion, Otros)
+- **Categorias personalizadas** que puedes crear con nombre y color
+- **Agregar / editar / eliminar** gastos en cualquier momento
+- **Cierre de mes manual o automatico** — al cambiar de mes se guarda en el historial
+- **Historial completo** de meses cerrados con detalle por categoria
+- **Persistencia local** usando AsyncStorage (sin necesidad de internet)
 
-2. Start the app
+## Tecnologias
 
-   ```bash
-   npx expo start
-   ```
+- [Expo SDK 53](https://expo.dev/) — entorno de React Native
+- [Expo Router](https://docs.expo.dev/router/introduction/) — navegacion basada en archivos
+- [React Native Reanimated](https://docs.swmansion.com/react-native-reanimated/) — animaciones
+- [Phosphor Icons](https://phosphoricons.com/) — iconos
+- [AsyncStorage](https://react-native-async-storage.github.io/async-storage/) — almacenamiento local
 
-In the output, you'll find options to open the app in a
+## Estructura del proyecto
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+```
+app/
+  index.tsx              → Splash con logo
+  _layout.tsx            → Layout raiz con manejo de auth
+  auth/
+    welcome.tsx          → Pantalla de bienvenida
+    login.tsx            → Iniciar sesion
+    registrar.tsx        → Registro
+  (tabs)/
+    _layout.tsx          → Tab navigator
+    index.tsx            → Dashboard del mes actual
+    historial.tsx        → Meses cerrados
+    ajustes.tsx          → Perfil y opciones
+  gasto/
+    agregar.tsx          → Agregar / editar gasto
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+components/               → Componentes reutilizables (Boton, Input, Typo, etc.)
+constants/                → Tema, colores, categorias fijas
+context/AuthContext.tsx   → Estado global de autenticacion
+utils/
+  storage.ts              → Helper de AsyncStorage
+  authService.ts          → Login / registro local
+  gastosService.ts        → CRUD de gastos, presupuesto y cierre de mes
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Como ejecutar
 
-## Learn more
+### 1. Clonar e instalar dependencias
 
-To learn more about developing your project with Expo, look at the following resources:
+```bash
+git clone https://github.com/Thapir/gastos-track-app.git
+cd gastos-track-app
+npm install
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### 2. Iniciar el servidor de desarrollo
 
-## Join the community
+```bash
+npx expo start
+```
 
-Join our community of developers creating universal apps.
+### 3. Abrir la app
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Tienes varias opciones:
+
+- **Expo Go (recomendado)** — instala [Expo Go](https://expo.dev/go) en tu celular y escanea el codigo QR
+- **Emulador Android** — presiona `a` en la terminal (requiere Android Studio)
+- **Simulador iOS** — presiona `i` (solo Mac)
+- **Web** — presiona `w`
+
+### Si tienes problemas de red
+
+Prueba el modo tunel para esquivar firewalls o redes restrictivas:
+
+```bash
+npx expo start --tunnel
+```
+
+## Como funciona el cierre de mes
+
+- **Manual:** desde el Dashboard, boton "Cerrar mes manualmente". Guarda los gastos del mes actual en el historial y deja el dashboard limpio para el mes siguiente.
+- **Automatico:** los primeros 3 dias de cada mes, la app revisa si el mes anterior fue cerrado. Si no lo fue, lo cierra automaticamente.
+
+Cada mes cerrado se guarda con su total, lista de gastos y desglose por categoria.
+
+## Roadmap
+
+- [ ] Migrar autenticacion a Firebase
+- [ ] Sincronizacion en la nube (Firestore)
+- [ ] Graficos de gastos por categoria
+- [ ] Exportar historial a PDF / CSV
+- [ ] Recordatorios de presupuesto
+
+## Licencia
+
+Proyecto personal de aprendizaje. Libre para usar y modificar.
